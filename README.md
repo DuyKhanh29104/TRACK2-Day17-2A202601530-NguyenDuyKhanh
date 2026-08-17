@@ -198,7 +198,7 @@ consumer bị kill giữa batch (delivery semantics).
 
 1. **Repo** đã chỉnh sửa (link Git hoặc file nén — chạy `make clean` trước khi nén)
 2. **Kết quả `make verify`** — dán nguyên output ba lượt chạy
-3. **Báo cáo một trang** theo [REPORT_TEMPLATE.md](REPORT_TEMPLATE.md). Mỗi
+3. **Báo cáo một trang** theo [REPORT_2A202601530](REPORT_2A202601530). Mỗi
    nhiệm vụ trình bày: triệu chứng → **nguyên nhân** → cách khắc phục →
    bằng chứng. Nhiệm vụ 2 bắt buộc phải có giá trị **P99** đo được.
 
