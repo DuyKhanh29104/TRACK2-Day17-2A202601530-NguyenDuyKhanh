@@ -35,16 +35,28 @@
 
 {{ config(materialized = 'table') }}
 
-with ranked as (
+with cleaned as (
 
     select
         *,
-        {{ normalize_priority('priority_raw') }}             as priority_clean,
+        {{ normalize_priority('priority_raw') }} as priority_clean
+    from {{ source('bronze', 'bronze_tickets_cdc') }}
+
+), valid_rows as (
+
+    select *
+    from cleaned
+    where priority_clean is not null
+
+), ranked as (
+
+    select
+        *,
         row_number() over (
             partition by ticket_id
             order by event_time desc, cdc_seq desc
         ) as _rn
-    from {{ source('bronze', 'bronze_tickets_cdc') }}
+    from valid_rows
 
 ),
 

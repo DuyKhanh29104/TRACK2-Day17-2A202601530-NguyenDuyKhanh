@@ -46,6 +46,7 @@ phải giảm, `files` phải giảm, và `result hash` phải GIỮ NGUYÊN.
 from __future__ import annotations
 
 import pathlib
+import shutil
 import sys
 
 import duckdb
@@ -63,27 +64,37 @@ def main() -> int:
     n_src = len(list(SRC.glob("*.parquet")))
     print(f"  nguồn : {SRC}  ({n_src:,} file)")
 
-    # TODO(nhiệm vụ 4): hiện thực khung COPY ... TO ... ở phần docstring.
-    #
-    #   con.execute(f"""
-    #       copy (
-    #           select * from read_parquet('{SRC}/*.parquet')
-    #           order by ...
-    #       ) to '{DST}' (
-    #           format parquet,
-    #           partition_by (...),
-    #           overwrite_or_ignore,
-    #           row_group_size ...
-    #       )
-    #   """)
-    #
-    # Sau đó kiểm tra không mất hàng nào:
-    #
-    #   assert <số row dataset cũ> == <số row dataset mới>
+    src_rows = con.execute(
+        f"select count(*) from read_parquet('{SRC}/*.parquet')"
+    ).fetchone()[0]
 
-    print("\n  tools/compact.py chưa được hiện thực — đây là nhiệm vụ 4.")
-    print("  Mở file này, đọc phần KHUNG THỰC HIỆN ở đầu file và điền vào TODO.")
-    print("  Hướng dẫn từng bước: GUIDE.md mục 4.\n")
+    # Đây là thư mục đầu ra do chính compact.py tạo ra, nên có thể dựng lại
+    # sạch mỗi lần chạy để không giữ lại file cũ nếu layout thay đổi.
+    if DST.exists():
+        shutil.rmtree(DST)
+
+    # event_date có ít giá trị phân biệt (14 ngày), phù hợp làm partition.
+    # customer_name được đặt đầu trong ORDER BY để các hàng của cùng customer
+    # nằm gần nhau, giúp min/max của row group loại bỏ phần không liên quan.
+    con.execute(f"""
+        copy (
+            select *
+            from read_parquet('{SRC}/*.parquet')
+            order by event_date, customer_name, event_time
+        ) to '{DST}' (
+            format parquet,
+            partition_by (event_date),
+            overwrite_or_ignore,
+            row_group_size 4096
+        )
+    """)
+
+    dst_rows = con.execute(
+        f"select count(*) from read_parquet('{DST}/**/*.parquet')"
+    ).fetchone()[0]
+    assert src_rows == dst_rows, (src_rows, dst_rows)
+    print(f"  đã compact: {src_rows:,} -> {dst_rows:,} dòng")
+    print(f"  đích      : {DST}")
     return 0
 
 

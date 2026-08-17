@@ -53,7 +53,7 @@ TABLE = "bronze_events_stream"
 
 DDL = f"""
 create table if not exists {TABLE} (
-    event_id      varchar,
+    event_id      varchar primary key,
     ticket_id     varchar,
     customer_id   varchar,
     customer_name varchar,
@@ -68,19 +68,31 @@ create table if not exists {TABLE} (
 def write_batch(con: duckdb.DuckDBPyConnection, batch: list[dict]) -> None:
     """Ghi một lô message xuống kho — nhiệm vụ 5, hạng mục (b).
 
-    Câu lệnh hiện tại là INSERT thuần: ghi lại cùng một event_id sẽ tạo thêm
-    một hàng mới. Xem khung mã giả ở đầu file.
+    event_id là khóa tự nhiên của message. Nếu batch được đọc lại sau khi
+    process chết trước lúc commit offset, bản ghi cũ được cập nhật thay vì
+    tạo thêm một hàng trùng.
     """
-    con.executemany(
-        f"insert into {TABLE} values (?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                r["event_id"], r["ticket_id"], r["customer_id"], r["customer_name"],
-                r["event_type"], r["latency_ms"], r["event_time"], r["_ingested_at"],
-            )
-            for r in batch
-        ],
-    )
+    row_placeholders = "(" + ", ".join(["?"] * 8) + ")"
+    values_sql = ", ".join([row_placeholders] * len(batch))
+    params = [
+        value
+        for r in batch
+        for value in (
+            r["event_id"], r["ticket_id"], r["customer_id"], r["customer_name"],
+            r["event_type"], r["latency_ms"], r["event_time"], r["_ingested_at"],
+        )
+    ]
+    con.execute(f"""
+        insert into {TABLE} values {values_sql}
+        on conflict (event_id) do update set
+            ticket_id = excluded.ticket_id,
+            customer_id = excluded.customer_id,
+            customer_name = excluded.customer_name,
+            event_type = excluded.event_type,
+            latency_ms = excluded.latency_ms,
+            event_time = excluded.event_time,
+            _ingested_at = excluded._ingested_at
+    """, params)
 
 
 def maybe_crash(batch_no: int, crash_at: int | None) -> None:
@@ -110,11 +122,18 @@ def consume(
             batch_no += 1
 
             # ── KHỐI CẦN XEM XÉT — nhiệm vụ 5, hạng mục (a) ───────────────
-            # Ba dòng dưới đây được phép sắp xếp lại. maybe_crash() mô phỏng
-            # `kill -9`: tiến trình chết ngay tại vị trí của nó, không rollback.
+            # Ghi trước, mô phỏng crash trước commit offset. Nếu chết ở đây,
+            # batch sẽ được đọc lại; write_batch() phải idempotent để không
+            # tạo duplicate.
+            con.execute("begin transaction")
+            try:
+                write_batch(con, batch)       # ghi dữ liệu
+                con.execute("commit")        # làm bền batch trước offset
+            except Exception:
+                con.execute("rollback")
+                raise
+            maybe_crash(batch_no, crash_at)   # sự cố xảy ra trước commit
             consumer.commit()                 # ghi nhận offset
-            maybe_crash(batch_no, crash_at)   # sự cố xảy ra tại đây
-            write_batch(con, batch)           # ghi dữ liệu
             # ─────────────────────────────────────────────────────────────
 
             written += len(batch)
