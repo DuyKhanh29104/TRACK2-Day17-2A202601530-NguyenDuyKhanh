@@ -415,7 +415,7 @@ make verify
 
 ## 4. Viết report
 
-Dùng [REPORT_2A202601530](REPORT_2A202601530). Mỗi nhiệm vụ trình bày bốn mục:
+Dùng [REPORT_2A202601530.md](REPORT_2A202601530.md). Mỗi nhiệm vụ trình bày bốn mục:
 
 ```
 Triệu chứng   : hiện tượng quan sát được từ phía vận hành
